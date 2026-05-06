@@ -19,6 +19,9 @@ request settings (cookies, auth, proxies).
 """
 from .dictionary import CaseInsensitiveDict
 
+import json #added
+import base64 #added
+
 class Request():
     """The fully mutable "class" `Request <Request>` object,
     containing the exact bytes that will be sent to the server.
@@ -60,7 +63,7 @@ class Request():
         #: HTTP path
         self.path = None        
         # The cookies set used to create Cookie header
-        self.cookies = None
+        self.cookies = {}
         #: request body to send to the server.
         self.body = None
         # The raw header
@@ -81,18 +84,18 @@ class Request():
             if path == '/':
                 path = '/index.html'
         except Exception:
-            return None, None
+            return None, None, None
 
         return method, path, version
              
-    def prepare_headers(self, request):
+    def prepare_headers(self, raw_request):
         """Prepares the given HTTP headers."""
-        lines = request.split('\r\n')
-        headers = {}
+        lines = raw_request.split('\r\n')
+        headers = CaseInsensitiveDict()
         for line in lines[1:]:
             if ': ' in line:
                 key, val = line.split(': ', 1)
-                headers[key.lower()] = val
+                headers[key] = val
         return headers
 
     def fetch_headers_body(self, request):
@@ -112,6 +115,10 @@ class Request():
         self.method, self.path, self.version = self.extract_request_line(request)
         print("[Request] {} path {} version {}".format(self.method, self.path, self.version))
 
+        raw_header, raw_body = self.fetch_headers_body(request)
+        self._raw_headers = raw_header
+        self._raw_body = raw_body
+        self.headers = self.prepare_headers(self._raw_headers)
         #
         # @bksysnet Preapring the webapp hook with AsynapRous instance
         # The default behaviour with HTTP server is empty routed
@@ -122,38 +129,84 @@ class Request():
         if not routes == {}:
             self.routes = routes
             print("[Request] Routing METHOD {} path {}".format(self.method, self.path))
-            self.hook = routes.get((self.method, self.path))
+
+            routing_path = self.path
+            # Remove query parameters (what comes after '?')
+            if '?' in routing_path:
+                routing_path = routing_path.split('?')[0]
+            # Remove trailing slash if it's not the root path
+            if routing_path != '/' and routing_path.endswith('/'):
+                routing_path = routing_path.rstrip('/')
+
+            
+            # Initial code used self.hook = routes.get((self.method, self.path))
+            # But we need to consider the routing path without query parameters and trailing slash
+            self.hook = routes.get((self.method, routing_path))
             print("[Request] Hook has request {}".format(request))
             #
             # self.hook manipulation goes here
             # ...
-            #
+            if self.hook:
+                print("[Request] Hook found for METHOD {} path {}".format(self.method, self.path))
+            else:
+                print("[Request] No hook found for METHOD {} path {}".format(self.method, self.path))
 
-        self._raw_heaers = ""
-        self._raw_body =  ""
-        cookies = self.headers.get('cookie', '')
+        # self._raw_heaers = ""
+        # self._raw_body =  ""
+        if self._raw_body: self.prepare_body(data=self._raw_body, files=None, json_data=None)
+
+        auth_header = self.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Basic '):
+            b64_auth_string = auth_header.split(' ', 1)[1]
+            auth_string = base64.b64decode(b64_auth_string).decode('utf-8')
+            username, password = auth_string.split(':', 1)
+            self.prepare_auth((username, password))
+        
+        cookies = self.headers.get('Cookie', '')
             #
             #  TODO: implement the cookie function here
             #        by parsing the header            #
+        if cookies:
+            for cookie in cookies.split(';'):
+                if '=' in cookie:
+                    key, value = cookie.strip().split('=', 1)
+                    self.cookies[key] = value
 
         return
 
-    def prepare_body(self, data, files, json=None):
-        self.prepare_content_length(self.body)
-        self.body = body
+    def prepare_body(self, data, files, json_data=None):
+        #self.prepare_content_length(self.body)
+        #self.body = body
         #
         # TODO prepare the request authentication
         #
 	# self.auth = ...
+        if json_data is not None:
+            self.body = json.dumps(json_data)
+            self.headers["Content-Type"] = "application/json"
+        elif data:
+            self.body = data
+        else:
+            self.body = ""
+
+        self.prepare_content_length(self.body)
         return
 
 
     def prepare_content_length(self, body):
-        self.headers["Content-Length"] = "0"
+        #self.headers["Content-Length"] = "0"
         #
         # TODO prepare the request authentication
         #
 	# self.auth = ...
+        if body:
+            if isinstance(body, str):
+                body_length = len(body.encode('utf-8'))
+            else:
+                body_length = len(body)
+            self.headers["Content-Length"] = str(body_length)
+        else:
+            self.headers["Content-Length"] = "0"
         return
 
 
@@ -162,6 +215,13 @@ class Request():
         # TODO prepare the request authentication
         #
 	# self.auth = ...
+        if auth:
+            self.auth = auth
+            username, password = auth
+
+            auth_string = f"{username}:{password}"
+            b64_auth_string = base64.b64encode(auth_string.encode('utf-8')).decode('utf-8')
+            self.headers["Authorization"] = f"Basic {b64_auth_string}"
         return
 
     def prepare_cookies(self, cookies):

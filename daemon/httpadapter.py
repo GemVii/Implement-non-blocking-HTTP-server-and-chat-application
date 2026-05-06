@@ -20,10 +20,13 @@ raw URL paths and RESTful route definitions, and integrates with
 Request and Response objects to handle client-server communication.
 """
 
+from .utils import get_auth_from_url #added
 from .request import Request
 from .response import Response
 from .dictionary import CaseInsensitiveDict
+from .utils import get_auth_from_url, get_encoding_from_headers
 
+import base64 #added
 import asyncio
 import inspect
 
@@ -95,7 +98,6 @@ class HttpAdapter:
         :param addr (tuple): The client's address.
         :param routes (dict): The route mapping for dispatching requests.
         """
-
         # Connection handler.
         self.conn = conn        
         # Connection address.
@@ -112,12 +114,35 @@ class HttpAdapter:
 
         # Handle request hook
         if req.hook:
-            #
-            # TODO: handle for App hook here
-            #
-            response = ""
+            if inspect.iscoroutinefunction(req.hook):
+                hook_result = asyncio.run(req.hook(headers=req.headers, body=req.body))
+            else:
+                hook_result = req.hook(headers=req.headers, body=req.body)
+                
+            if isinstance(hook_result, str):
+                hook_result = hook_result.encode('utf-8')
+                
+            # --- THE FIX: ALLOW CUSTOM HTTP HEADERS ---
+            if hook_result.startswith(b"HTTP/"):
+                # If the route manually created the HTTP headers (like for /login), use it directly
+                response = hook_result
+            else:
+                # Otherwise, wrap it in the standard JSON headers
+                header = (
+                    "HTTP/1.1 200 OK\r\n"
+                    "Content-Type: application/json\r\n"
+                    f"Content-Length: {len(hook_result)}\r\n"
+                    "Connection: close\r\n"
+                    "Access-Control-Allow-Origin: *\r\n"
+                    "Access-Control-Allow-Headers: *\r\n"
+                    "Access-Control-Allow-Methods: *\r\n"
+                    "\r\n"
+                ).encode('utf-8')
+                response = header + hook_result
+            # ------------------------------------------
+        else:
+            response = resp.build_response(req)
 
-        #print("[HttpAdapter] Response content {}".format(response))
         conn.sendall(response)
         conn.close()
 
@@ -138,31 +163,48 @@ class HttpAdapter:
         # Response handler
         resp = self.response
 
-        print("[HttpAdapter] Invoke handle_client_coroutine connection {})".format(addr))
         addr = writer.get_extra_info("peername")
+        print("[HttpAdapter] Invoke handle_client_coroutine connection {}".format(addr))
 
         # TODO Handle the request asynchronously
         msg = await reader.read(1024)
-
-
-        req.prepare(msg.decode("utf-8"), routes={})
+        req.prepare(msg.decode("utf-8"), routes=self.routes)
 
         # Handle request hook
         if req.hook:
-            #
-            # TODO: handle for App hook here
-            #
-            response = ""
-
-        # Build response
-        #print("[HttpAdapter] Start **ASYNC** build_response with type {}".format(type(req)))
-        response = resp.build_response(req)
+            if inspect.iscoroutinefunction(req.hook):
+                hook_result = await req.hook(headers=req.headers, body=req.body)
+            else:
+                hook_result = req.hook(headers=req.headers, body=req.body)
+                
+            if isinstance(hook_result, str):
+                hook_result = hook_result.encode('utf-8')
+                
+            # --- THE FIX: ALLOW CUSTOM HTTP HEADERS ---
+            if hook_result.startswith(b"HTTP/"):
+                # If the route manually created the HTTP headers (like for /login), use it directly
+                response = hook_result
+            else:
+                # Otherwise, wrap it in the standard JSON headers
+                header = (
+                    "HTTP/1.1 200 OK\r\n"
+                    "Content-Type: application/json\r\n"
+                    f"Content-Length: {len(hook_result)}\r\n"
+                    "Connection: close\r\n"
+                    "Access-Control-Allow-Origin: *\r\n"
+                    "Access-Control-Allow-Headers: *\r\n"
+                    "Access-Control-Allow-Methods: *\r\n"
+                    "\r\n"
+                ).encode('utf-8')
+                response = header + hook_result
+            # ------------------------------------------
+        else:
+            response = resp.build_response(req)
 
         # Send all the response asynchronously
         writer.write(response)
         await writer.drain()
 
-    @property
     def extract_cookies(self, req, resp):
         """
         Build cookies from the :class:`Request <Request>` headers.
@@ -172,11 +214,11 @@ class HttpAdapter:
         :rtype: cookies - A dictionary of cookie key-value pairs.
         """
         cookies = {}
-        for header in headers:
-            if header.startswith("Cookie:"):
-                cookie_str = header.split(":", 1)[1].strip()
-                for pair in cookie_str.split(";"):
-                    key, value = pair.strip().split("=")
+        if "Cookie" in req.headers:
+            cookie_str = req.headers["Cookie"]
+            for pair in cookie_str.split(";"):
+                if "=" in pair:
+                    key, value = pair.strip().split("=", 1)
                     cookies[key] = value
         return cookies
 
@@ -200,7 +242,7 @@ class HttpAdapter:
             response.url = req.url
 
         # Add new cookies from the server.
-        response.cookies = extract_cookies(req)
+        response.cookies = self.extract_cookies(req, resp)
 
         # Give the Response some context.
         response.request = req
@@ -288,9 +330,20 @@ class HttpAdapter:
         #       username, password =...
         # we provide dummy auth here
         #
-        username, password = ("user1", "password")
+        
+        ## username, password = ("user1", "password")
+        
+        username, password = get_auth_from_url(proxy)
 
+        """
         if username:
             headers["Proxy-Authorization"] = (username, password)
+        """
+
+        # Encode both username and password by concatination (salting) and then base64 encoding
+        if username and password:
+            auth_string = f"{username}:{password}"
+            b64_auth_string = base64.b64encode(auth_string.encode('utf-8')).decode('utf-8')
+            headers["Proxy-Authorization"] = f"Basic {b64_auth_string}"
 
         return headers

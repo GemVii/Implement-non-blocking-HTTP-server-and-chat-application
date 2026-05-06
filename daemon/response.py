@@ -162,12 +162,16 @@ class Response():
                 base_dir = BASE_DIR+"static/"
             elif sub_type == 'html':
                 base_dir = BASE_DIR+"www/"
+            elif sub_type == 'csv' or sub_type == 'xml': #added xml and csv support
+                base_dir = BASE_DIR+"apps/"
             else:
                 handle_text_other(sub_type)
         elif main_type == 'image':
             base_dir = BASE_DIR+"static/"
             self.headers['Content-Type']='image/{}'.format(sub_type)
         elif main_type == 'application':
+            if sub_type == ['xml', 'zip']: #added xml and zip support
+                base_dir = BASE_DIR+"static/"
             base_dir = BASE_DIR+"apps/"
             self.headers['Content-Type']='application/{}'.format(sub_type)
         #
@@ -182,6 +186,9 @@ class Response():
         #        video/mpeg
         #        ...
         #
+        elif main_type == 'video': #added video support
+            base_dir = BASE_DIR+"static/"
+            self.headers['Content-Type']='video/{}'.format(sub_type)
         else:
             raise ValueError("Invalid MEME type: main_type={} sub_type={}".format(main_type,sub_type))
 
@@ -206,12 +213,17 @@ class Response():
             #        store in the return value of content
             #
         try:
-            with open(filepath, "rb") as f:
-               content = f.read()
+            if os.path.exists(filepath) and os.path.isfile(filepath):
+                with open(filepath, "rb") as f:
+                    content = f.read()
+                return len(content), content    
+            else:
+                print("[Response] File not found or inaccessible: {}".format(filepath))
+                return -1, b""
         except Exception as e:
             print("[Response] build_content exception: {}".format(e))
             return -1, b""
-        return len(content), content
+        #return len(content), content
 
 
     def build_response_header(self, request):
@@ -246,7 +258,22 @@ class Response():
                 "Warning": "199 Miscellaneous warning",
                 "User-Agent": "{}".format(reqhdr.get("User-Agent", "Chrome/123.0.0.0")),
             }
+        
+        if hasattr(self, "cookies") and self.cookies:
+            cookie_header = "; ".join(f"{key}={value}" for key, value in self.cookies.items())
+            headers["Set-Cookie"] = cookie_header
 
+        # if request.auth:
+        #     self.auth = request.auth
+        if hasattr(request, 'auth') and request.auth:
+            self.auth = request.auth
+        self.status_code = 200
+        self.reason = "OK"
+        
+        fmt_header = "HTTP/1.1 {} {}\r\n".format(self.status_code, self.reason)
+        for key, value in headers.items():
+            fmt_header += "{}: {}\r\n".format(key, value)
+        fmt_header += "\r\n"
         # Header text alignment
             #
             #  TODO: implement the header building to create formated
@@ -309,7 +336,17 @@ class Response():
         #
         # TODO: add support objects
         #
+        elif mime_type == 'image/png' or mime_type == 'image/jpeg':
+            base_dir = self.prepare_content_type(mime_type = mime_type)
+        elif mime_type == 'application/javascript':
+            base_dir = self.prepare_content_type(mime_type = mime_type)
         else:
             return self.build_notfound()
-
+        
+        #build the content and header before sending response
+        content_length, content = self.build_content(path, base_dir)
+        if content_length < 0:
+            return self.build_notfound()
+        self._content = content
+        self._header = self.build_response_header(request)
         return self._header + self._content

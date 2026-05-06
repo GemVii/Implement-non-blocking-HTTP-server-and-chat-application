@@ -1,21 +1,504 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <title>bksysnet@hcmut welcome</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AsynapRous P2P Chat</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0a0a12;
+            --bg-glass: rgba(20, 20, 35, 0.85);
+            --border-light: rgba(255, 255, 255, 0.08);
+            --primary: #6366f1;
+            --primary-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            --text-main: #ffffff;
+            --text-muted: rgba(255, 255, 255, 0.45);
+        }
 
-    <meta charset="utf-8" />
-    <meta http-equiv="Content-type" content="text/html; charset=utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="stylesheet" href="css/styles.css" />
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+        
+        body { 
+            background: radial-gradient(ellipse at 10% 10%, #1a1a3e 0%, #0a0a12 55%, #000 100%);
+            color: var(--text-main); 
+            height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Ambient Orbs */
+        .ambient-orb-1 { position: absolute; top: 15%; left: 10%; width: 300px; height: 300px; border-radius: 50%; background: radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 70%); pointer-events: none; z-index: 0; }
+        .ambient-orb-2 { position: absolute; bottom: 20%; right: 15%; width: 250px; height: 250px; border-radius: 50%; background: radial-gradient(circle, rgba(168,85,247,0.1) 0%, transparent 70%); pointer-events: none; z-index: 0; }
+
+        /* --- LOGIN SCREEN --- */
+        #setup-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; position: relative; z-index: 10; }
+        .login-box {
+            background: var(--bg-glass); padding: 48px 40px; border-radius: 24px;
+            box-shadow: 0 32px 64px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05); width: 400px;
+            border: 1px solid var(--border-light); backdrop-filter: blur(24px);
+            animation: slideUpFade 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; text-align: center;
+        }
+        .brand-icon {
+            width: 56px; height: 56px; border-radius: 16px; margin: 0 auto 16px;
+            background: var(--primary-gradient); display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 8px 24px rgba(99,102,241,0.4);
+        }
+        .login-box h1 { color: #fff; font-size: 26px; letter-spacing: -0.5px; margin-bottom: 6px; }
+        .login-box p { color: rgba(255,255,255,0.4); font-size: 14px; margin-bottom: 24px; }
+        .login-box input {
+            width: 100%; padding: 14px 18px; margin-bottom: 16px; border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.35); color: white; 
+            font-size: 15px; transition: 0.2s; outline: none;
+        }
+        .login-box input:focus { border-color: rgba(99,102,241,0.6); box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
+        .login-box button {
+            width: 100%; padding: 14px; border-radius: 12px; border: none;
+            background: var(--primary-gradient); color: white; font-size: 15px; font-weight: 600; 
+            cursor: pointer; transition: 0.2s; box-shadow: 0 4px 16px rgba(99,102,241,0.35);
+        }
+        .login-box button:hover { transform: scale(1.02); box-shadow: 0 8px 24px rgba(99,102,241,0.5); }
+        .login-box button:active { transform: scale(0.98); }
+        .login-footer { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 24px; }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981; }
+
+        /* --- MAIN APP SCREEN --- */
+        #app-screen { display: none; height: 100vh; flex-direction: row; position: relative; z-index: 10; }
+        
+        /* Sidebar */
+        #sidebar {
+            width: 260px; background: rgba(12,12,22,0.85); border-right: 1px solid var(--border-light);
+            display: flex; flex-direction: column; backdrop-filter: blur(20px); flex-shrink: 0;
+        }
+        .sidebar-brand { padding: 20px 16px 18px; border-bottom: 1px solid var(--border-light); display: flex; align-items: center; gap: 10px; }
+        .brand-icon-small { width: 32px; height: 32px; border-radius: 9px; background: var(--primary-gradient); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(99,102,241,0.4); flex-shrink: 0; }
+        .brand-text { font-size: 14px; font-weight: 700; color: #e0e7ff; letter-spacing: -0.2px; }
+        .brand-sub { font-size: 10px; color: rgba(255,255,255,0.3); letter-spacing: 0.5px; text-transform: uppercase; }
+        
+        #channel-container { padding: 12px 8px 8px; flex: 1; overflow-y: auto; }
+        .channel-label { font-size: 10px; color: rgba(255,255,255,0.25); text-transform: uppercase; letter-spacing: 1.2px; padding: 0 8px 10px; font-weight: 600; }
+        #channel-list { list-style: none; }
+        .channel-item {
+            display: flex; align-items: center; gap: 8px; padding: 10px 12px; margin-bottom: 4px; border-radius: 10px;
+            cursor: pointer; background: transparent; border: 1px solid transparent; color: var(--text-muted);
+            font-size: 14px; transition: 0.15s; font-weight: 400;
+        }
+        .channel-item:hover { transform: translateX(3px); }
+        .channel-item.active { background: linear-gradient(135deg, rgba(99,102,241,0.2) 0%, rgba(139,92,246,0.15) 100%); border-color: rgba(99,102,241,0.3); color: #c7d2fe; font-weight: 600; }
+        .channel-item.active svg { stroke: #818cf8; }
+        .channel-item.unread { color: #fff; font-weight: 600; }
+        .unread-dot { width: 7px; height: 7px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 6px rgba(239,68,68,0.7); flex-shrink: 0; margin-left: auto; }
+
+        .new-channel-box { padding: 14px 12px; border-top: 1px solid var(--border-light); background: rgba(0,0,0,0.25); display: flex; gap: 8px; }
+        .new-channel-box input { flex: 1; padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04); color: white; font-size: 13px; outline: none; min-width: 0; }
+        .new-channel-box button { width: 34px; height: 34px; border-radius: 8px; border: none; background: rgba(99,102,241,0.25); color: #818cf8; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: 0.2s; }
+        .new-channel-box button:hover { transform: scale(1.08); }
+
+        .user-profile { padding: 12px 14px; border-top: 1px solid var(--border-light); display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,0.3); }
+
+        /* Chat Area */
+        #chat-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+        #chat-header { padding: 16px 28px; background: rgba(10,10,20,0.7); border-bottom: 1px solid var(--border-light); display: flex; align-items: center; gap: 10px; backdrop-filter: blur(20px); flex-shrink: 0; }
+        .hash-icon-box { width: 32px; height: 32px; border-radius: 9px; background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.3); display: flex; align-items: center; justify-content: center; }
+        #chat-header h2 { margin: 0; color: #e0e7ff; font-size: 16px; font-weight: 600; letter-spacing: -0.2px; }
+        .user-badge { margin-left: auto; display: flex; align-items: center; gap: 6px; background: linear-gradient(135deg, rgba(99,102,241,0.15) 0%, rgba(139,92,246,0.2) 100%); border: 1px solid rgba(99,102,241,0.35); border-radius: 20px; padding: 5px 14px; box-shadow: 0 0 12px rgba(99,102,241,0.2); }
+        
+        #chat-box { flex: 1; overflow-y: auto; padding: 28px; display: flex; flex-direction: column; gap: 16px; scroll-behavior: smooth; }
+        
+        #empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: rgba(255,255,255,0.2); animation: fadeIn 0.3s ease; }
+
+        /* Message Bubbles */
+        .message-row { display: flex; gap: 10px; max-width: 72%; animation: slideUpMsg 0.25s ease-out forwards; }
+        .message-row.mine { align-self: flex-end; flex-direction: row-reverse; }
+        .message-row.other { align-self: flex-start; }
+        
+        .avatar { border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: white; font-weight: 700; }
+        .message-content { display: flex; flex-direction: column; }
+        .message-row.mine .message-content { align-items: flex-end; }
+        .message-row.other .message-content { align-items: flex-start; }
+        .sender-name { font-size: 11px; color: rgba(255,255,255,0.4); margin-bottom: 5px; padding-left: 4px; font-weight: 500; }
+        
+        .message-bubble { padding: 11px 16px; font-size: 14px; line-height: 1.55; word-break: break-word; }
+        .message-row.mine .message-bubble { border-radius: 18px 18px 4px 18px; background: var(--primary-gradient); color: #fff; box-shadow: 0 4px 16px rgba(99,102,241,0.3); border: none; }
+        .message-row.other .message-bubble { border-radius: 18px 18px 18px 4px; background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.9); border: 1px solid rgba(255,255,255,0.06); backdrop-filter: blur(10px); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+
+        /* Input Area */
+        #input-area { padding: 16px 24px; background: rgba(10,10,20,0.7); border-top: 1px solid var(--border-light); backdrop-filter: blur(20px); display: flex; gap: 12px; flex-shrink: 0; }
+        #input-area input { flex: 1; padding: 14px 18px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04); color: white; font-size: 14px; outline: none; transition: 0.2s; }
+        #input-area input:focus { border-color: rgba(99,102,241,0.5); box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+        #input-area button { padding: 0 24px; border-radius: 12px; border: none; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.2s; flex-shrink: 0; }
+        #input-area button:not(:disabled) { background: var(--primary-gradient); color: white; box-shadow: 0 4px 14px rgba(99,102,241,0.35); }
+        #input-area button:not(:disabled):hover { transform: scale(1.04); box-shadow: 0 8px 24px rgba(99,102,241,0.5); }
+        #input-area button:disabled { background: rgba(99,102,241,0.15); color: rgba(255,255,255,0.3); cursor: default; }
+
+        /* Animations & Scrollbar */
+        @keyframes slideUpFade { from { opacity: 0; transform: translateY(24px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes slideUpMsg { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+    </style>
 </head>
-
 <body>
-<div>
-    <h1>bksysnet@hcmut  Domain</h1>
-    <p>This domain is for use in illustrative examples in documents.
-    </p>
-  
-       <img src="images/welcome.png" alt="bksysnet at HCMUT" width="500" height="600">  
-</div>
+    <div class="ambient-orb-1"></div>
+    <div class="ambient-orb-2"></div>
+
+    <!-- LOGIN SCREEN -->
+    <div id="setup-screen">
+        <div class="login-box">
+            <div class="brand-icon">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            </div>
+            <h1>AsynapRous</h1>
+            <p>Decentralized P2P Chat</p>
+            <input type="text" id="username" placeholder="Your display name…" autocomplete="off">
+            <button onclick="setUsername()">Join Network</button>
+            <div class="login-footer">
+                <div class="status-dot"></div>
+                <span style="font-size: 12px; color: rgba(255,255,255,0.35);">End-to-end encrypted · No central server</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN APP SCREEN -->
+    <div id="app-screen">
+        
+        <!-- Sidebar -->
+        <div id="sidebar">
+            <div class="sidebar-brand">
+                <div class="brand-icon-small">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                </div>
+                <div>
+                    <div class="brand-text">AsynapRous</div>
+                    <div class="brand-sub">P2P Network</div>
+                </div>
+                <div style="margin-left: auto;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
+                </div>
+            </div>
+
+            <div id="channel-container">
+                <div class="channel-label">Channels</div>
+                <ul id="channel-list"></ul>
+            </div>
+
+            <div class="new-channel-box">
+                <input type="text" id="new-channel-input" placeholder="New channel…" autocomplete="off">
+                <button onclick="createChannel()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                </button>
+            </div>
+
+            <div class="user-profile">
+                <div id="my-avatar"></div>
+                <div>
+                    <div id="profile-name" style="font-size: 13px; font-weight: 600; color: #e0e7ff;"></div>
+                    <div style="font-size: 11px; color: rgba(255,255,255,0.35);">Online</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Area -->
+        <div id="chat-area">
+            <div id="chat-header">
+                <div class="hash-icon-box">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"></line><line x1="4" y1="15" x2="20" y2="15"></line><line x1="10" y1="3" x2="8" y2="21"></line><line x1="16" y1="3" x2="14" y2="21"></line></svg>
+                </div>
+                <h2 id="current-channel-name">general</h2>
+                <div class="user-badge">
+                    <div class="status-dot"></div>
+                    <span id="welcome-text" style="font-size: 13px; font-weight: 600; color: #c7d2fe;"></span>
+                </div>
+            </div>
+            
+            <div id="chat-box"></div>
+            
+            <div id="input-area">
+                <input type="text" id="message-input" placeholder="Message #general…" autocomplete="off">
+                <button id="send-btn" onclick="sendMessage()" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    Send
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let myUsername = "";
+        let currentChannel = "general";
+        let knownChannels = []; 
+        const SERVER_URL = "http://127.0.0.1:8001";
+
+        let lastSeenCounts = {}; 
+        let unreadChannels = new Set();
+
+        const msgInput = document.getElementById("message-input");
+        const sendBtn = document.getElementById("send-btn");
+
+        // Event Listeners
+        document.getElementById("username").addEventListener("keypress", e => { if (e.key === "Enter") setUsername(); });
+        msgInput.addEventListener("keypress", e => { if (e.key === "Enter") sendMessage(); });
+        msgInput.addEventListener("input", e => { sendBtn.disabled = e.target.value.trim() === ""; });
+        document.getElementById("new-channel-input").addEventListener("keypress", e => { if (e.key === "Enter") createChannel(); });
+
+        // Avatar Color Hashing Function (from React code)
+        function getAvatarGradient(name) {
+            const palette = [
+                ["#f59e0b", "#d97706"], ["#10b981", "#059669"], ["#3b82f6", "#2563eb"],
+                ["#ec4899", "#db2777"], ["#8b5cf6", "#7c3aed"], ["#ef4444", "#dc2626"],
+                ["#06b6d4", "#0891b2"],
+            ];
+            let n = 0;
+            for (let i = 0; i < name.length; i++) n += name.charCodeAt(i);
+            const [from, to] = palette[n % palette.length];
+            return { gradient: `linear-gradient(135deg, ${from} 0%, ${to} 100%)`, shadow: `${from}60` };
+        }
+
+        function createAvatarNode(name, size) {
+            const initial = name.charAt(0).toUpperCase();
+            const colors = getAvatarGradient(name);
+            const avatar = document.createElement("div");
+            avatar.className = "avatar";
+            avatar.innerText = initial;
+            avatar.style.width = size + "px";
+            avatar.style.height = size + "px";
+            avatar.style.fontSize = (size * 0.38) + "px";
+            avatar.style.background = colors.gradient;
+            avatar.style.boxShadow = `0 2px 8px ${colors.shadow}`;
+            return avatar;
+        }
+
+        function updateUI() {
+            document.getElementById("welcome-text").innerText = myUsername;
+            document.getElementById("profile-name").innerText = myUsername;
+            document.getElementById("current-channel-name").innerText = currentChannel;
+            msgInput.placeholder = `Message #${currentChannel}…`;
+            
+            // Set my profile avatar
+            const myAvatarContainer = document.getElementById("my-avatar");
+            myAvatarContainer.innerHTML = "";
+            myAvatarContainer.appendChild(createAvatarNode(myUsername, 30));
+        }
+
+        async function setUsername() {
+            const input = document.getElementById("username").value.trim();
+            if (input) {
+                myUsername = input;
+                await fetch(`${SERVER_URL}/login`, {
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain" },
+                    body: JSON.stringify({ username: myUsername })
+                });
+
+                document.getElementById("setup-screen").style.display = "none";
+                document.getElementById("app-screen").style.display = "flex";
+                
+                updateUI();
+                fetchMessages();
+                setInterval(fetchMessages, 2000); 
+            }
+        }
+
+        function renderSidebar() {
+            const list = document.getElementById("channel-list");
+            list.innerHTML = "";
+            knownChannels.forEach(ch => {
+                const li = document.createElement("li");
+                li.className = "channel-item";
+                
+                // SVG Hash Icon
+                const svgIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><line x1="4" y1="9" x2="20" y2="9"></line><line x1="4" y1="15" x2="20" y2="15"></line><line x1="10" y1="3" x2="8" y2="21"></line><line x1="16" y1="3" x2="14" y2="21"></line></svg>`;
+                
+                let innerHTML = `${svgIcon}<span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${ch}</span>`;
+
+                if (ch === currentChannel) {
+                    li.className += " active";
+                } else if (unreadChannels.has(ch)) {
+                    li.className += " unread";
+                    innerHTML += `<span class="unread-dot"></span>`;
+                }
+
+                li.innerHTML = innerHTML;
+
+                li.onclick = () => {
+                    currentChannel = ch;
+                    unreadChannels.delete(ch);
+                    updateUI();
+                    renderSidebar();
+                    document.getElementById("chat-box").innerHTML = ""; 
+                    fetchMessages();
+                };
+                list.appendChild(li);
+            });
+        }
+
+        async function createChannel() {
+            const inputField = document.getElementById("new-channel-input");
+            const newChannel = inputField.value.trim();
+            if (newChannel) {
+                await fetch(`${SERVER_URL}/add-list`, {
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain" },
+                    body: JSON.stringify({ channel: newChannel })
+                });
+                
+                inputField.value = ""; 
+                currentChannel = newChannel;
+                document.getElementById("chat-box").innerHTML = ""; 
+                updateUI();
+                fetchMessages(); 
+            }
+        }
+
+        function showEmptyState(show) {
+            let emptyState = document.getElementById("empty-state");
+            if (show) {
+                if (!emptyState) {
+                    emptyState = document.createElement("div");
+                    emptyState.id = "empty-state";
+                    emptyState.innerHTML = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"></line><line x1="4" y1="15" x2="20" y2="15"></line><line x1="10" y1="3" x2="8" y2="21"></line><line x1="16" y1="3" x2="14" y2="21"></line></svg>
+                                            <p style="margin:0; font-size:15px;">No messages yet in #${currentChannel}</p>`;
+                    document.getElementById("chat-box").appendChild(emptyState);
+                }
+            } else {
+                if (emptyState) emptyState.remove();
+            }
+        }
+
+        function appendMessage(sender, text) {
+            showEmptyState(false);
+            const chatBox = document.getElementById("chat-box");
+            const isMe = (sender === myUsername);
+            
+            const row = document.createElement("div");
+            row.className = `message-row ${isMe ? "mine" : "other"}`;
+
+            const content = document.createElement("div");
+            content.className = "message-content";
+
+            if (!isMe) {
+                const avatarNode = createAvatarNode(sender, 36);
+                row.appendChild(avatarNode);
+
+                const nameDiv = document.createElement("div");
+                nameDiv.className = "sender-name";
+                nameDiv.innerText = sender;
+                content.appendChild(nameDiv);
+            }
+
+            const bubble = document.createElement("div");
+            bubble.className = "message-bubble";
+            bubble.innerText = text; 
+            
+            content.appendChild(bubble);
+            row.appendChild(content);
+
+            chatBox.appendChild(row);
+        }
+
+        async function fetchMessages() {
+            try {
+                const response = await fetch(`${SERVER_URL}/get-messages`);
+                const data = await response.json();
+                
+                if (data.status === "success") {
+                    let shouldRenderSidebar = false;
+                    const availableChannels = Object.keys(data.channels);
+                    
+                    // 1. New channels
+                    if (availableChannels.length !== knownChannels.length) {
+                        knownChannels = availableChannels;
+                        shouldRenderSidebar = true;
+                    }
+
+                    // 2. Unread Logic
+                    availableChannels.forEach(ch => {
+                        const serverCount = data.channels[ch] ? data.channels[ch].length : 0;
+                        if (ch === currentChannel) {
+                            lastSeenCounts[ch] = serverCount; 
+                            if (unreadChannels.has(ch)) {
+                                unreadChannels.delete(ch);
+                                shouldRenderSidebar = true;
+                            }
+                        } else {
+                            const seenCount = lastSeenCounts[ch] || 0;
+                            if (serverCount > seenCount && !unreadChannels.has(ch)) {
+                                unreadChannels.add(ch);
+                                shouldRenderSidebar = true;
+                            }
+                        }
+                    });
+
+                    if (shouldRenderSidebar) renderSidebar();
+
+                    // 3. Render messages DOM diffing
+                    const chatBox = document.getElementById("chat-box");
+                    const isScrolledToBottom = chatBox.scrollHeight - chatBox.clientHeight <= chatBox.scrollTop + 50;
+                    
+                    const channelMessages = data.channels[currentChannel] || [];
+                    const serverCountCurrent = channelMessages.length;
+                    
+                    // Ignore empty-state div when counting UI messages
+                    const uiCount = Array.from(chatBox.children).filter(child => child.id !== "empty-state").length;
+
+                    if (serverCountCurrent === 0 && uiCount === 0) {
+                        showEmptyState(true);
+                    } else if (serverCountCurrent > uiCount) {
+                        for (let i = uiCount; i < serverCountCurrent; i++) {
+                            const msgString = channelMessages[i];
+                            const colonIndex = msgString.indexOf(":");
+                            if (colonIndex !== -1) {
+                                const sender = msgString.substring(0, colonIndex).trim();
+                                const text = msgString.substring(colonIndex + 1).trim();
+                                appendMessage(sender, text);
+                            }
+                        }
+                        if (isScrolledToBottom) chatBox.scrollTop = chatBox.scrollHeight;
+                    } else if (serverCountCurrent < uiCount && serverCountCurrent > 0) {
+                        chatBox.innerHTML = "";
+                        channelMessages.forEach(msgString => {
+                            const colonIndex = msgString.indexOf(":");
+                            if (colonIndex !== -1) {
+                                const sender = msgString.substring(0, colonIndex).trim();
+                                const text = msgString.substring(colonIndex + 1).trim();
+                                appendMessage(sender, text);
+                            }
+                        });
+                        chatBox.scrollTop = chatBox.scrollHeight;
+                    }
+                }
+            } catch (error) {
+                console.error("Sync error:", error);
+            }
+        }
+
+        async function sendMessage() {
+            const text = msgInput.value.trim();
+            if (text) {
+                const payload = { sender: myUsername, channel: currentChannel, message: text };
+
+                appendMessage(myUsername, text);
+                const chatBox = document.getElementById("chat-box");
+                chatBox.scrollTop = chatBox.scrollHeight;
+
+                msgInput.value = ""; 
+                sendBtn.disabled = true;
+
+                await fetch(`${SERVER_URL}/broadcast-peer`, {
+                    method: "POST",
+                    headers: { 
+                        "Content-Type": "text/plain",
+                        "Authorization": `Bearer ${myUsername}`
+                    }, 
+                    body: JSON.stringify(payload)
+                });
+            }
+        }
+    </script>
 </body>
 </html>

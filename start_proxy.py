@@ -90,11 +90,13 @@ def parse_virtual_hosts(config_file):
         #
         if len(proxy_map.get(host,[])) == 1:
             routes[host] = (proxy_map.get(host,[])[0], dist_policy_map)
-        # esle if:
-        #         TODO:  apply further policy matching here
-        #
-        else:
+        elif dist_policy_map in ['round-robin', 'least-conn', 'random']:
+            # Apply the matching policy if it is supported
             routes[host] = (proxy_map.get(host,[]), dist_policy_map)
+        else:
+            # Fallback to round-robin for unrecognized policies
+            print(f"Warning: Unsupported policy '{dist_policy_map}' for host '{host}'. Falling back to round-robin.")
+            routes[host] = (proxy_map.get(host,[]), 'round-robin')
 
     for key, value in routes.items():
         print(key, value)

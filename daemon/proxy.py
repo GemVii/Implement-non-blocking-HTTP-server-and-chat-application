@@ -33,12 +33,14 @@ from .response import *
 from .httpadapter import HttpAdapter
 from .dictionary import CaseInsensitiveDict
 
+_rr_state = {}
+
 #: A dictionary mapping hostnames to backend IP and port tuples.
 #: Used to determine routing targets for incoming requests.
 PROXY_PASS = {
-    "192.168.56.103:8080": ('192.168.56.103', 9000),
-    "app1.local": ('192.168.56.103', 9001),
-    "app2.local": ('192.168.56.103', 9002),
+    "192.168.56.114:8080": ('192.168.56.114', 9000),
+    "app1.local": ('192.168.56.114', 9001),
+    "app2.local": ('192.168.56.114', 9002),
 }
 
 
@@ -89,7 +91,7 @@ def resolve_routing_policy(hostname, routes):
     """
 
     print(hostname)
-    proxy_map, policy = routes.get(hostname,('127.0.0.1:9000','round-robin'))
+    proxy_map, policy = routes.get(hostname, ([], 'round-robin'))
     print(proxy_map)
     print(policy)
 
@@ -99,24 +101,25 @@ def resolve_routing_policy(hostname, routes):
         if len(proxy_map) == 0:
             print("[Proxy] Emtpy resolved routing of hostname {}".format(hostname))
             print("Empty proxy_map result")
-            # TODO: implement the error handling for non mapped host
-            #       the policy is design by team, but it can be 
-            #       basic default host in your self-defined system
-            # Use a dummy host to raise an invalid connection
-            proxy_host = '127.0.0.1'
-            proxy_port = '9000'
-        elif len(value) == 1:
-            proxy_host, proxy_port = proxy_map[0].split(":", 2)
-        #elif: # apply the policy handling 
-        #   proxy_map
-        #   policy
+            # Error handling for non mapped host
+            # We return None for the host, which will trigger the 404 Not Found response
+            # in handle_client instead of trying to connect to a dummy host.
+            proxy_host = None
+            proxy_port = None
+        elif len(proxy_map) == 1:
+            proxy_host, proxy_port = proxy_map[0].split(":", 1) # FIXED
         else:
-            # Out-of-handle mapped host
-            proxy_host = '127.0.0.1'
-            proxy_port = '9000'
+            # Apply the policy handling (e.g. round-robin)
+            if policy == 'round-robin':
+                global _rr_state
+                idx = _rr_state.get(hostname, 0)
+                proxy_host, proxy_port = proxy_map[idx].split(":", 1) # FIXED
+                _rr_state[hostname] = (idx + 1) % len(proxy_map)
+            else:
+                proxy_host, proxy_port = proxy_map[0].split(":", 1) # FIXED
     else:
         print("[Proxy] resolve route of hostname {} is a singulair to".format(hostname))
-        proxy_host, proxy_port = proxy_map.split(":", 2)
+        proxy_host, proxy_port = proxy_map.split(":", 1) # FIXED
 
     return proxy_host, proxy_port
 
@@ -142,19 +145,33 @@ def handle_client(ip, port, conn, addr, routes):
     request = conn.recv(1024).decode()
 
     # Extract hostname
+    hostname = None # FIXED: Initialize to prevent UnboundLocalError
     for line in request.splitlines():
         if line.lower().startswith('host:'):
             hostname = line.split(':', 1)[1].strip()
+
+    # FIXED: Abort early if the client sent a malformed request
+    if not hostname:
+        print(f"[Proxy] {addr} sent a request without a Host header. Dropping.")
+        response = (
+            "HTTP/1.1 400 Bad Request\r\n"
+            "Connection: close\r\n\r\n"
+        ).encode('utf-8')
+        conn.sendall(response)
+        conn.close()
+        return
 
     print("[Proxy] {} at Host: {}".format(addr, hostname))
 
     # Resolve the matching destination in routes and need conver port
     # to integer value
     resolved_host, resolved_port = resolve_routing_policy(hostname, routes)
+    
     try:
         resolved_port = int(resolved_port)
-    except ValueError:
-        print("Not a valid integer")
+    except (ValueError, TypeError): # FIXED: Catch TypeError for int(None)
+        print("Not a valid integer for port.")
+        resolved_host = None # Force the 404 block below so we don't try to connect
 
     if resolved_host:
         print("[Proxy] Host name {} is forwarded to {}:{}".format(hostname,resolved_host, resolved_port))
@@ -168,6 +185,7 @@ def handle_client(ip, port, conn, addr, routes):
             "\r\n"
             "404 Not Found"
         ).encode('utf-8')
+        
     conn.sendall(response)
     conn.close()
 
@@ -194,11 +212,11 @@ def run_proxy(ip, port, routes):
         print("[Proxy] Listening on IP {} port {}".format(ip,port))
         while True:
             conn, addr = proxy.accept()
-            #
-            #  TODO: implement the step of the client incomping connection
-            #        using multi-thread programming with the
-            #        provided handle_client routine
-            #
+            # Implement the step of the client incoming connection
+            # using multi-thread programming with the provided handle_client routine
+            client_thread = threading.Thread(target=handle_client, args=(ip, port, conn, addr, routes))
+            client_thread.daemon = True
+            client_thread.start()
     except socket.error as e:
       print("Socket error: {}".format(e))
 
